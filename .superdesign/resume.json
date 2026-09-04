@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "/cabinet/inbox": {
+      "targetKind": "new-ui",
+      "projectId": "086c84bf-96b4-4503-b191-b8ddc9e19d76",
+      "activeDraftId": "5a144bb7-19f7-40a1-a5d9-35537a742dae",
+      "sourceTarget": "/cabinet",
+      "sourceDraftId": "26d8e1a8-cfd1-4abe-9153-0c59fd667a2d",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a8ad20e0a6521ceb13e58cb877e83187add8274a65ec1365c175369b1f048ea8",
+        "src/app/globals.css": "97ba04f745d10909f568a65ae2ca14dd8df8da363425a76e298b917b6e7cbe09"
+      },
+      "components": [
+        {
+          "name": "CabinetAppShell",
+          "id": "fb6a622e-9eca-468f-a776-9acbe0a08d48",
+          "sourcePath": "src/components/layout/app-shell.tsx"
+        }
+      ],
+      "drafts": {
+        "5a144bb7-19f7-40a1-a5d9-35537a742dae": {
+          "title": "Inbox Cabinet - Denta Assistant",
+          "visualDirection": "Premium white cabinet inbox with semantic priority colours",
+          "parentDraftId": "26d8e1a8-cfd1-4abe-9153-0c59fd667a2d",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-08-29T02:03:00.000Z"
+    },
+    "/cabinet": {
+      "targetKind": "existing-ui",
+      "projectId": "086c84bf-96b4-4503-b191-b8ddc9e19d76",
+      "baselineDraftId": "26d8e1a8-cfd1-4abe-9153-0c59fd667a2d",
+      "activeDraftId": "26d8e1a8-cfd1-4abe-9153-0c59fd667a2d",
+      "designSystemPath": ".superdesign/design-system.md",
+      "referenceIds": [],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "src/app/(app)/cabinet/page.tsx",
+        "src/app/(app)/cabinet/layout.tsx",
+        "src/components/layout/app-shell.tsx",
+        "src/components/dashboard/cabinet-dashboard.tsx",
+        "src/components/dashboard/metric-card.tsx",
+        "src/components/shared/page-header.tsx",
+        "src/components/ui/button.tsx",
+        "src/components/ui/card.tsx",
+        "src/components/ui/badge.tsx",
+        "src/components/ui/avatar.tsx",
+        "src/app/globals.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a8ad20e0a6521ceb13e58cb877e83187add8274a65ec1365c175369b1f048ea8",
+        "src/app/(app)/cabinet/page.tsx": "2b5e5c3a7efc662cc2c046ad19837cb72fa681cb388411f5c25ce9fedf364614",
+        "src/app/(app)/cabinet/layout.tsx": "0b011c5feff2df58270d7b4976bc70cbe63b463c0e64396bf76ff4538b46c88a",
+        "src/components/layout/app-shell.tsx": "63a15b2779e6f32673b8904a17522d5fa6019d22299c965eb153486ccfcb2d75",
+        "src/components/dashboard/cabinet-dashboard.tsx": "af0008c436ed549c3a74e57400759c92c89e62ca08787867b7bcb1aa6940feb7",
+        "src/components/dashboard/metric-card.tsx": "85fddcf563020e12e5cd34a07814be4e25b79178e739f8c5f2cb0e02de9e45da",
+        "src/components/shared/page-header.tsx": "d9a7bdff80c6ef1e5f9ed3db1a8042ae56e049ea7691f2ac4f80d26ef4db476b",
+        "src/components/ui/button.tsx": "9ce417985b97956fbb3a73c84b0eb60230fd0a9844c5111df92e061731440a3f",
+        "src/components/ui/card.tsx": "d8113cbf964f8d1aadf2649d2944d8bbc6e3cfd49d36746f76868cbc4dde3cfe",
+        "src/components/ui/badge.tsx": "1b292cd64608eef62eab1e43621071b32f794988a8c4e40fd1086cfbf8d9ef5d",
+        "src/components/ui/avatar.tsx": "fd03e439ae00bf718834132df24072b58a6019538329d4db47f874f247d428fc",
+        "src/app/globals.css": "3057321ac24773c5b8cac5e2c9d84b1e26343c6851a6db97033d9ab895e976f4"
+      },
+      "components": [
+        {
+          "name": "CabinetAppShell",
+          "id": "fb6a622e-9eca-468f-a776-9acbe0a08d48",
+          "sourcePath": "src/components/layout/app-shell.tsx"
+        }
+      ],
+      "drafts": {
+        "26d8e1a8-cfd1-4abe-9153-0c59fd667a2d": {
+          "title": "Denta Assistant - Enhanced Visual Hierarchy",
+          "visualDirection": "Premium white SaaS, meaningful category colours, warm editorial accents, black primary actions",
+          "currentVersion": 3
+        }
+      },
+      "updatedAt": "2026-08-29T01:35:00.000Z"
+    }
+  }
+}

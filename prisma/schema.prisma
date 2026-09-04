@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // Used by `prisma migrate` only; must be a direct (non-pooled) connection.
+  directUrl = env("DIRECT_URL")
+}
+
+enum PlatformRole {
+  PLATFORM_ADMIN
+  CABINET_MEMBER
+}
+
+enum MembershipRole {
+  OWNER
+  PRACTITIONER
+  RECEPTIONIST
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING_HUMAN
+  CLOSED
+}
+
+enum ConversationIntakeState {
+  LANGUAGE_SELECTION
+  OPEN
+}
+
+enum MessageAuthor {
+  PATIENT
+  ASSISTANT
+  TEAM_MEMBER
+  SYSTEM
+}
+
+enum InboundMessageJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum IntegrationProvider {
+  GOOGLE_CALENDAR
+  WHATSAPP_BUSINESS
+  TWILIO_WHATSAPP
+}
+
+enum KnowledgeEntryStatus {
+  DRAFT
+  ACTIVE
+}
+
+model User {
+  id           String               @id @default(cuid())
+  externalId   String               @unique
+  email        String               @unique
+  name         String?
+  platformRole PlatformRole         @default(CABINET_MEMBER)
+  memberships  CabinetMembership[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+}
+
+model Cabinet {
+  id            String               @id @default(cuid())
+  name          String
+  slug          String               @unique
+  practitionerName String?
+  phone         String?
+  address       String?
+  city          String?
+  building      String?
+  floor         String?
+  mapsUrl       String?
+  accessInstructions String?
+  openingHours  Json?
+  supportedLanguages String[]         @default(["fr"])
+  slotDurationMinutes Int              @default(30)
+  timezone      String               @default("Africa/Casablanca")
+  defaultLocale String               @default("fr-MA")
+  notificationSettings Json?
+  members       CabinetMembership[]
+  patients      Patient[]
+  conversations Conversation[]
+  appointments  Appointment[]
+  automations   Automation[]
+  automationDeliveries AutomationDelivery[]
+  integrations  IntegrationAccount[]
+  knowledgeEntries KnowledgeBaseEntry[]
+  invitations   CabinetInvitation[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+model CabinetInvitation {
+  id        String         @id @default(cuid())
+  cabinetId String
+  email     String
+  role      MembershipRole @default(RECEPTIONIST)
+  acceptedAt DateTime?
+  createdAt DateTime       @default(now())
+  cabinet   Cabinet        @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+
+  @@unique([cabinetId, email])
+  @@index([email, acceptedAt])
+}
+
+model CabinetMembership {
+  id        String         @id @default(cuid())
+  cabinetId String
+  userId    String
+  role      MembershipRole @default(RECEPTIONIST)
+  cabinet   Cabinet        @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+
+  @@unique([cabinetId, userId])
+  @@index([userId])
+}
+
+model Patient {
+  id            String         @id @default(cuid())
+  cabinetId     String
+  displayName   String
+  phone         String
+  preferredLang String         @default("fr")
+  cabinet       Cabinet        @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  appointments  Appointment[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([cabinetId, phone])
+  @@index([cabinetId, displayName])
+}
+
+model Conversation {
+  id        String             @id @default(cuid())
+  cabinetId String
+  patientId String
+  status    ConversationStatus @default(OPEN)
+  intakeState ConversationIntakeState @default(LANGUAGE_SELECTION)
+  urgent    Boolean            @default(false)
+  cabinet   Cabinet            @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  patient   Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([cabinetId, status, updatedAt])
+  @@index([patientId])
+}
+
+model Message {
+  id             String        @id @default(cuid())
+  conversationId String
+  author         MessageAuthor
+  body           String
+  externalId     String?       @unique
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model InboundMessageJob {
+  id             String                  @id @default(cuid())
+  externalId     String                  @unique
+  cabinetId      String
+  conversationId String
+  messageId      String
+  status         InboundMessageJobStatus @default(PENDING)
+  attempts       Int                     @default(0)
+  availableAt    DateTime                @default(now())
+  lockedAt       DateTime?
+  lastError      String?
+  completedAt    DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([status, availableAt])
+  @@index([conversationId])
+}
+
+model Appointment {
+  id                String            @id @default(cuid())
+  cabinetId         String
+  patientId         String
+  startsAt          DateTime
+  endsAt            DateTime
+  status            AppointmentStatus @default(PENDING)
+  reason            String?
+  googleCalendarId  String?
+  cabinet           Cabinet           @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  patient           Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  automationDeliveries AutomationDelivery[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([cabinetId, startsAt])
+  @@index([patientId, startsAt])
+}
+
+model Automation {
+  id        String   @id @default(cuid())
+  cabinetId String
+  key       String
+  enabled   Boolean  @default(true)
+  settings  Json?
+  cabinet   Cabinet  @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cabinetId, key])
+}
+
+model AutomationDelivery {
+  id            String   @id @default(cuid())
+  cabinetId     String
+  appointmentId String
+  key           String
+  deliveredAt   DateTime @default(now())
+  cabinet       Cabinet  @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, key])
+  @@index([cabinetId, deliveredAt])
+}
+
+model NotificationDelivery {
+  id        String   @id @default(cuid())
+  cabinetId String
+  key       String
+  period    String
+  createdAt DateTime @default(now())
+
+  @@unique([cabinetId, key, period])
+  @@index([cabinetId, createdAt])
+}
+
+model IntegrationAccount {
+  id                    String              @id @default(cuid())
+  cabinetId             String
+  provider              IntegrationProvider
+  externalAccountId     String?
+  externalPhoneNumberId String?             @unique
+  displayPhoneNumber    String?
+  selectedCalendarId    String?
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+  expiresAt            DateTime?
+  metadata             Json?
+  cabinet              Cabinet             @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([cabinetId, provider])
+}
+
+model KnowledgeBaseEntry {
+  id        String               @id @default(cuid())
+  cabinetId String
+  question  String
+  answer    String
+  category  String               @default("Général")
+  status    KnowledgeEntryStatus @default(ACTIVE)
+  cabinet   Cabinet              @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([cabinetId, category, status])
+}
