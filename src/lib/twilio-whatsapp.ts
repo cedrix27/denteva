@@ -74,6 +74,7 @@ export function sendTwilioWhatsAppText(to: string, body: string, senderOverride?
 
 export function sendTwilioLanguageSelection(to: string, languages: string[], senderOverride?: string | null) {
   const choices = languages.filter((language) => ["fr", "en", "darija"].includes(language));
+  choices.sort((a, b) => ["fr", "en", "darija"].indexOf(a) - ["fr", "en", "darija"].indexOf(b));
   const labels: Record<string, string> = { fr: "1. Français", en: "2. English", darija: "3. Darija" };
   const body = ["Bonjour 👋", "Choisissez votre langue en répondant avec le numéro :", ...choices.map((language) => labels[language])].join("\n");
   return sendTwilioWhatsAppText(to, body, senderOverride);
