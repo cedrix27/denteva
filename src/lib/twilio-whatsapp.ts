@@ -26,7 +26,7 @@ function twilioCredentials() {
 export async function getTwilioWhatsAppSenders(): Promise<TwilioWhatsAppSender[] | null> {
   const credentials = twilioCredentials();
   if (!credentials) return null;
-  const response = await fetch("https://messaging.twilio.com/v2/Channels/Senders?channel=whatsapp&pageSize=1000", { headers: { Authorization: credentials.authorization }, cache: "no-store" });
+  const response = await fetch("https://messaging.twilio.com/v2/Channels/Senders?Channel=whatsapp&PageSize=1000&Page=0", { headers: { Authorization: credentials.authorization }, cache: "no-store" });
   if (!response.ok) { logger.error("twilio.senders_list_rejected", { status: response.status }); return null; }
   const payload = await response.json() as { senders?: Array<{ sid?: string; senderId?: string; sender_id?: string; status?: string; friendlyName?: string; friendly_name?: string; qualityRating?: string; quality_rating?: string; messagingLimit?: string; messaging_limit?: string }> };
   return (payload.senders ?? []).map((sender) => {
