@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { after } from "next/server";
 import { ConversationStatus, IntegrationProvider, MessageAuthor } from "@prisma/client";
 import { processInboundMessageJobs } from "@/lib/inbound-message-queue";
 import { logger } from "@/lib/logger";
@@ -27,12 +26,10 @@ export async function POST(request: Request) {
     const inbound = await tx.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body, externalId } });
     await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
   });
-  after(async () => {
-    try {
-      await processInboundMessageJobs(1);
-    } catch (error) {
-      logger.error("inbound_queue.background_processing_failed", { externalId, error });
-    }
-  });
+  try {
+    await processInboundMessageJobs(1);
+  } catch (error) {
+    logger.error("inbound_queue.processing_failed", { externalId, error });
+  }
   return emptyTwiml();
 }
