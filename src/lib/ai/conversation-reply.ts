@@ -23,6 +23,7 @@ export async function isConversationThrottled(conversationId: string) {
 /** Loads the cabinet's validated knowledge plus the earlier turns, then asks the model. */
 export async function generateConversationReply(input: { cabinet: CabinetContext; conversationId: string; inboundMessageId: string; language: string; message: string; patientId?: string }) {
   const context = { cabinetId: input.cabinet.id, conversationId: input.conversationId };
+  const startedAt = Date.now();
   try {
     const [knowledge, history] = await Promise.all([
       prisma.knowledgeBaseEntry.findMany({ where: { cabinetId: input.cabinet.id, status: "ACTIVE" }, select: { question: true, answer: true, category: true }, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: KNOWLEDGE_LIMIT }),
@@ -48,10 +49,11 @@ export async function generateConversationReply(input: { cabinet: CabinetContext
         slotDurationMinutes: input.cabinet.slotDurationMinutes,
       } : undefined,
     });
-    if (!reply) logger.warn("assistant.empty_reply", context);
+    if (!reply) logger.warn("assistant.empty_reply", { ...context, durationMs: Date.now() - startedAt });
+    else logger.info("assistant.reply_generated", { ...context, durationMs: Date.now() - startedAt });
     return reply;
   } catch (error) {
-    logger.error("assistant.reply_failed", { ...context, error });
+    logger.error("assistant.reply_failed", { ...context, durationMs: Date.now() - startedAt, error });
     return null;
   }
 }
