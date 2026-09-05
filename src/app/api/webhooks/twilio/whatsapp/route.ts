@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { ConversationStatus, IntegrationProvider, MessageAuthor } from "@prisma/client";
+import { processInboundMessageJobs } from "@/lib/inbound-message-queue";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { normalizeWhatsAppAddress } from "@/lib/twilio-whatsapp";
@@ -24,6 +26,13 @@ export async function POST(request: Request) {
     const conversation = await tx.conversation.findFirst({ where: { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: [ConversationStatus.OPEN, ConversationStatus.WAITING_HUMAN] } }, orderBy: { updatedAt: "desc" } }) ?? await tx.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id } });
     const inbound = await tx.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body, externalId } });
     await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
+  });
+  after(async () => {
+    try {
+      await processInboundMessageJobs(1);
+    } catch (error) {
+      logger.error("inbound_queue.background_processing_failed", { externalId, error });
+    }
   });
   return emptyTwiml();
 }
