@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after } from "next/server";
 import { ConversationStatus, IntegrationProvider, MessageAuthor } from "@prisma/client";
-import { processInboundMessageJobs } from "@/lib/inbound-message-queue";
+import { processInboundMessageJob } from "@/lib/inbound-message-queue";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { normalizeWhatsAppAddress } from "@/lib/twilio-whatsapp";
@@ -28,12 +28,11 @@ export async function POST(request: Request) {
   if (duplicate) return emptyTwiml();
   if (!integration) { logger.warn("whatsapp.unknown_sender", { sender }); return emptyTwiml(); }
   const phone = normalizeWhatsAppAddress(from); const profileName = form.get("ProfileName")?.toString().trim();
-  await prisma.$transaction(async (tx) => {
+  const jobId = await prisma.$transaction(async (tx) => {
     const patient = await tx.patient.upsert({ where: { cabinetId_phone: { cabinetId: integration.cabinetId, phone } }, update: { displayName: profileName || undefined }, create: { cabinetId: integration.cabinetId, phone, displayName: profileName || phone } });
     const open = { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: [ConversationStatus.OPEN, ConversationStatus.WAITING_HUMAN] } };
     // Order by creation, not by updatedAt: a new message never bumped updatedAt, so
-    // with two open threads the winner was arbitrary and consecutive messages from the
-    // same patient landed in different conversations, splitting the assistant's history.
+    // with two open threads the winner was whichever last changed status — arbitrary.
     const conversation = await tx.conversation.findFirst({ where: open, orderBy: { createdAt: "desc" } }) ?? await tx.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id } });
     // Heal any earlier split: one patient keeps exactly one live conversation.
     await tx.conversation.updateMany({ where: { ...open, id: { not: conversation.id } }, data: { status: ConversationStatus.CLOSED } });
@@ -41,14 +40,16 @@ export async function POST(request: Request) {
     // Keeps the cabinet inbox sorted by real activity — Prisma's @updatedAt only fires
     // when the conversation row itself is written, which a new message does not do.
     await tx.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
-    await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
+    const job = await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
+    return job.id;
   });
-  // Drain the job right away so the patient is not waiting on the next cron tick,
-  // but after the TwiML is flushed: the model call takes seconds and Twilio times out.
-  // The cron stays the safety net for retries and for anything this pass misses.
+  // Handle THIS message right away, after the TwiML is flushed: the model takes
+  // seconds and Twilio times out. Targeting the job by id matters — draining the
+  // oldest one instead answered a different patient and left this message queued.
+  // The cron stays the safety net for retries.
   after(async () => {
     try {
-      await processInboundMessageJobs(1);
+      await processInboundMessageJob(jobId);
     } catch (error) {
       logger.error("inbound_queue.processing_failed", { externalId, error });
     }
