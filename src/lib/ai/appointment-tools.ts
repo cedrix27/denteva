@@ -2,9 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { AppointmentStatus } from "@prisma/client";
 import { findAvailableSlots, formatSlot, isWithinOpeningHours, zonedTimeToUtc } from "@/lib/availability";
-import { syncAppointmentToGoogle } from "@/lib/google-calendar";
+import { cancelAppointmentOnGoogle, syncAppointmentToGoogle } from "@/lib/google-calendar";
+import { notifyUrgentConversation } from "@/lib/cabinet-notifications";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { ConversationStatus } from "@prisma/client";
 
 const MAX_HORIZON_DAYS = 60;
 const SEARCH_WINDOW_DAYS = 14;
@@ -40,6 +42,20 @@ export function appointmentTools(context: BookingContext) {
   const upcomingWhere = { cabinetId: context.cabinetId, patientId: context.patientId, status: { in: [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED] }, startsAt: { gte: new Date() } };
 
   return {
+    transferer_a_l_equipe: tool({
+      description: "Passe la conversation à l'équipe humaine du cabinet. À appeler dès que tu promets au patient de transmettre sa demande, dès que tu détectes une urgence médicale, ou dès que l'information demandée est absente de la Base IA. Appelle-le AVANT de répondre au patient : sans cet appel, personne au cabinet ne sera prévenu.",
+      inputSchema: z.object({
+        raison: z.string().max(300).describe("Pourquoi l'équipe doit reprendre, en une phrase."),
+        urgent: z.boolean().describe("true si le patient décrit une urgence médicale (douleur intense, saignement, gonflement, traumatisme, difficulté à respirer ou avaler)."),
+      }),
+      execute: async ({ raison, urgent }) => {
+        await prisma.conversation.update({ where: { id: context.conversationId }, data: { status: ConversationStatus.WAITING_HUMAN, ...(urgent ? { urgent: true } : {}) } });
+        if (urgent) await notifyUrgentConversation(context.cabinetId, context.conversationId).catch(() => undefined);
+        logger.warn("assistant.handover_requested", { cabinetId: context.cabinetId, conversationId: context.conversationId, urgent, raison });
+        return { transfere: true, urgent, message: "L'équipe du cabinet est prévenue et reprend la conversation. Confirme-le au patient." };
+      },
+    }),
+
     chercher_disponibilites: tool({
       description: "Liste les créneaux libres du cabinet. À utiliser dès que le patient évoque une prise de rendez-vous, avant toute proposition d'horaire.",
       inputSchema: z.object({
@@ -109,7 +125,11 @@ export function appointmentTools(context: BookingContext) {
       execute: async ({ reference }) => {
         const cancelled = await prisma.appointment.updateMany({ where: { id: reference, ...upcomingWhere }, data: { status: AppointmentStatus.CANCELLED } });
         if (!cancelled.count) return { annule: false, raison: "Aucun rendez-vous à venir ne correspond à cette référence." };
-        logger.info("appointment.cancelled_by_assistant", { cabinetId: context.cabinetId, conversationId: context.conversationId, appointmentId: reference });
+        // The slot is free in our database; the dentist's Google agenda must follow,
+        // otherwise the event lingers and the slot looks busy on their side.
+        const appointment = await prisma.appointment.findUnique({ where: { id: reference }, include: { patient: true } });
+        const sync = appointment ? await cancelAppointmentOnGoogle(appointment).catch(() => ({ synced: false as const })) : { synced: false as const };
+        logger.info("appointment.cancelled_by_assistant", { cabinetId: context.cabinetId, conversationId: context.conversationId, appointmentId: reference, googleSynced: sync.synced });
         return { annule: true };
       },
     }),

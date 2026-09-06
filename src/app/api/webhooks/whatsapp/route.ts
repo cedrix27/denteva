@@ -13,13 +13,18 @@ type MetaAccount = Parameters<typeof sendWhatsAppText>[0];
 /** Runs after Meta receives the 200, so the webhook never waits on the model. */
 async function replyWithAssistant(job: { account: MetaAccount; cabinet: CabinetContext; conversationId: string; inboundMessageId: string; language: string; patientId: string; to: string; message: string }) {
   const reply = await generateConversationReply(job);
-  if (!reply) return;
-  const sent = await sendWhatsAppText(job.account, job.to, reply);
+  if (!reply.ok) {
+    // No usable answer: hand the conversation to the team rather than stay silent.
+    await prisma.conversation.update({ where: { id: job.conversationId }, data: { status: "WAITING_HUMAN" } });
+    logger.warn("assistant.handed_over_to_team", { cabinetId: job.cabinet.id, conversationId: job.conversationId, reason: reply.reason });
+    return;
+  }
+  const sent = await sendWhatsAppText(job.account, job.to, reply.text);
   if (!sent.delivered) {
     logger.error("whatsapp.delivery_failed", { cabinetId: job.cabinet.id, conversationId: job.conversationId, reason: sent.reason });
     return;
   }
-  await prisma.message.create({ data: { conversationId: job.conversationId, author: MessageAuthor.ASSISTANT, body: reply, externalId: sent.externalId ?? undefined } });
+  await prisma.message.create({ data: { conversationId: job.conversationId, author: MessageAuthor.ASSISTANT, body: reply.text, externalId: sent.externalId ?? undefined } });
 }
 
 type WebhookMessage = { id?: string; from?: string; timestamp?: string; type?: string; text?: { body?: string }; interactive?: { type?: string; button_reply?: { id?: string; title?: string } } };

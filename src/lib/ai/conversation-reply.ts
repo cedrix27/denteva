@@ -49,11 +49,12 @@ export async function generateConversationReply(input: { cabinet: CabinetContext
         slotDurationMinutes: input.cabinet.slotDurationMinutes,
       } : undefined,
     });
-    if (!reply) logger.warn("assistant.empty_reply", { ...context, durationMs: Date.now() - startedAt });
-    else logger.info("assistant.reply_generated", { ...context, durationMs: Date.now() - startedAt });
+    if (reply.ok) logger.info("assistant.reply_generated", { ...context, durationMs: Date.now() - startedAt });
+    else logger.warn("assistant.no_reply", { ...context, durationMs: Date.now() - startedAt, reason: reply.reason, retryable: reply.retryable });
     return reply;
   } catch (error) {
+    // Loading knowledge or history failed: a database blip, worth retrying.
     logger.error("assistant.reply_failed", { ...context, durationMs: Date.now() - startedAt, error });
-    return null;
+    return { ok: false as const, retryable: true, reason: "CONTEXT_LOAD_FAILED" };
   }
 }

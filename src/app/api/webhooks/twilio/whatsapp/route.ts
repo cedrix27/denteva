@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { ConversationStatus, IntegrationProvider, MessageAuthor } from "@prisma/client";
 import { processInboundMessageJobs } from "@/lib/inbound-message-queue";
 import { logger } from "@/lib/logger";
@@ -6,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { normalizeWhatsAppAddress } from "@/lib/twilio-whatsapp";
 
 export const runtime = "nodejs";
+/** The `after()` work below (model call + delivery) runs inside this budget. */
+export const maxDuration = 60;
 
 function fullWebhookUrl(request: Request) { const origin = process.env.APP_URL?.replace(/\/$/, ""); const url = new URL(request.url); return origin ? `${origin}${url.pathname}${url.search}` : url.toString(); }
 function hasValidSignature(request: Request, params: URLSearchParams) { const token = process.env.TWILIO_AUTH_TOKEN; const received = request.headers.get("x-twilio-signature"); if (!token || !received) return false; const signed = `${fullWebhookUrl(request)}${[...new Set([...params.keys()])].sort().flatMap((key) => params.getAll(key).sort().map((value) => `${key}${value}`)).join("")}`; const expected = createHmac("sha1", token).update(signed).digest("base64"); return expected.length === received.length && timingSafeEqual(Buffer.from(expected), Buffer.from(received)); }
@@ -26,10 +29,15 @@ export async function POST(request: Request) {
     const inbound = await tx.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body, externalId } });
     await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
   });
-  try {
-    await processInboundMessageJobs(1);
-  } catch (error) {
-    logger.error("inbound_queue.processing_failed", { externalId, error });
-  }
+  // Drain the job right away so the patient is not waiting on the next cron tick,
+  // but after the TwiML is flushed: the model call takes seconds and Twilio times out.
+  // The cron stays the safety net for retries and for anything this pass misses.
+  after(async () => {
+    try {
+      await processInboundMessageJobs(1);
+    } catch (error) {
+      logger.error("inbound_queue.processing_failed", { externalId, error });
+    }
+  });
   return emptyTwiml();
 }
