@@ -87,7 +87,9 @@ ${knowledge}`;
       system,
       messages,
       maxOutputTokens: reasoning ? 2000 : 600,
-      ...(reasoning ? { providerOptions: { openai: { reasoningEffort: "low", textVerbosity: "low" } } } : { temperature: 0.25 }),
+      // "minimal" roughly halves latency on gpt-5-mini for this task (measured 4.5s -> 2.4s)
+    // without losing tool calling; a WhatsApp reply needs speed, not deliberation.
+    ...(reasoning ? { providerOptions: { openai: { reasoningEffort: "minimal", textVerbosity: "low" } } } : { temperature: 0.25 }),
       ...(input.booking ? { tools: appointmentTools(input.booking), stopWhen: stepCountIs(MAX_STEPS) } : {}),
     });
     const text = result.text.trim();

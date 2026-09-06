@@ -19,14 +19,28 @@ export async function POST(request: Request) {
   if (!hasValidSignature(request, params)) { logger.warn("whatsapp.invalid_signature", {}); return new Response("Invalid signature", { status: 401 }); }
   const externalId = form.get("MessageSid")?.toString(); const from = form.get("From")?.toString(); const to = form.get("To")?.toString(); const body = form.get("Body")?.toString().trim();
   if (!externalId || !from || !to || !body) return emptyTwiml();
-  if (await prisma.message.findUnique({ where: { externalId }, select: { id: true } })) return emptyTwiml();
-  const sender = normalizeWhatsAppAddress(to); const integration = await prisma.integrationAccount.findFirst({ where: { provider: IntegrationProvider.TWILIO_WHATSAPP, externalPhoneNumberId: sender }, select: { cabinetId: true } });
+  const sender = normalizeWhatsAppAddress(to);
+  // Both lookups are independent; the database is a round trip away, so pay for one.
+  const [duplicate, integration] = await Promise.all([
+    prisma.message.findUnique({ where: { externalId }, select: { id: true } }),
+    prisma.integrationAccount.findFirst({ where: { provider: IntegrationProvider.TWILIO_WHATSAPP, externalPhoneNumberId: sender }, select: { cabinetId: true } }),
+  ]);
+  if (duplicate) return emptyTwiml();
   if (!integration) { logger.warn("whatsapp.unknown_sender", { sender }); return emptyTwiml(); }
   const phone = normalizeWhatsAppAddress(from); const profileName = form.get("ProfileName")?.toString().trim();
   await prisma.$transaction(async (tx) => {
     const patient = await tx.patient.upsert({ where: { cabinetId_phone: { cabinetId: integration.cabinetId, phone } }, update: { displayName: profileName || undefined }, create: { cabinetId: integration.cabinetId, phone, displayName: profileName || phone } });
-    const conversation = await tx.conversation.findFirst({ where: { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: [ConversationStatus.OPEN, ConversationStatus.WAITING_HUMAN] } }, orderBy: { updatedAt: "desc" } }) ?? await tx.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id } });
+    const open = { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: [ConversationStatus.OPEN, ConversationStatus.WAITING_HUMAN] } };
+    // Order by creation, not by updatedAt: a new message never bumped updatedAt, so
+    // with two open threads the winner was arbitrary and consecutive messages from the
+    // same patient landed in different conversations, splitting the assistant's history.
+    const conversation = await tx.conversation.findFirst({ where: open, orderBy: { createdAt: "desc" } }) ?? await tx.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id } });
+    // Heal any earlier split: one patient keeps exactly one live conversation.
+    await tx.conversation.updateMany({ where: { ...open, id: { not: conversation.id } }, data: { status: ConversationStatus.CLOSED } });
     const inbound = await tx.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body, externalId } });
+    // Keeps the cabinet inbox sorted by real activity — Prisma's @updatedAt only fires
+    // when the conversation row itself is written, which a new message does not do.
+    await tx.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
     await tx.inboundMessageJob.create({ data: { externalId, cabinetId: integration.cabinetId, conversationId: conversation.id, messageId: inbound.id } });
   });
   // Drain the job right away so the patient is not waiting on the next cron tick,
