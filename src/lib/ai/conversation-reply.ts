@@ -1,11 +1,11 @@
 import { MessageAuthor } from "@prisma/client";
 import { generateCabinetReply } from "@/lib/ai/cabinet-assistant";
+import { findRelevantKnowledge, type KnowledgeEntry } from "@/lib/ai/knowledge-retrieval";
 import { isClearlyOutsideCabinetScope, outsideCabinetScopeReply } from "@/lib/ai/scope-guard";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
 const HISTORY_LIMIT = 12;
-const KNOWLEDGE_LIMIT = 24;
 const REPLIES_PER_HOUR = Number(process.env.AI_REPLIES_PER_CONVERSATION_PER_HOUR || 20);
 
 export type CabinetContext = { id: string; name: string; city: string | null; address: string | null; openingHours: unknown; timezone: string; slotDurationMinutes: number };
@@ -21,7 +21,7 @@ export async function isConversationThrottled(conversationId: string) {
   return true;
 }
 
-/** Loads the cabinet's validated knowledge plus the earlier turns, then asks the model. */
+/** Retrieves evidence relevant to the patient message, then asks the model. */
 export async function generateConversationReply(input: { cabinet: CabinetContext; conversationId: string; inboundMessageId: string; language: string; message: string; patientId?: string }) {
   const context = { cabinetId: input.cabinet.id, conversationId: input.conversationId };
   const startedAt = Date.now();
@@ -32,10 +32,14 @@ export async function generateConversationReply(input: { cabinet: CabinetContext
       logger.info("assistant.out_of_scope_rejected", context);
       return { ok: true as const, text: outsideCabinetScopeReply(input.language) };
     }
-    const [knowledge, history] = await Promise.all([
-      prisma.knowledgeBaseEntry.findMany({ where: { cabinetId: input.cabinet.id, status: "ACTIVE" }, select: { question: true, answer: true, category: true }, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: KNOWLEDGE_LIMIT }),
+    const [allKnowledge, history] = await Promise.all([
+      // Read all active entries so an old, relevant answer is never excluded just
+      // because a different entry was edited more recently.
+      prisma.knowledgeBaseEntry.findMany({ where: { cabinetId: input.cabinet.id, status: "ACTIVE" }, select: { question: true, answer: true, category: true } }),
       prisma.message.findMany({ where: { conversationId: input.conversationId, id: { not: input.inboundMessageId } }, select: { author: true, body: true }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT }),
     ]);
+    const knowledge = findRelevantKnowledge(input.message, allKnowledge satisfies KnowledgeEntry[]);
+    logger.info("assistant.knowledge_retrieved", { ...context, totalEntries: allKnowledge.length, matchedEntries: knowledge.length });
     const reply = await generateCabinetReply({
       cabinetName: input.cabinet.name,
       city: input.cabinet.city,
