@@ -69,12 +69,17 @@ export async function POST(request: Request) {
       if (!message.id || !message.from) continue;
       if (await prisma.message.findUnique({ where: { externalId: message.id }, select: { id: true } })) continue;
       const language = message.type === "interactive" && message.interactive?.type === "button_reply" ? message.interactive.button_reply?.id?.replace("lang:", "") : null;
-      if (language && ["fr", "en", "darija"].includes(language)) {
+      if (language && ["fr", "en", "darija"].includes(language) && cabinet.supportedLanguages.includes(language)) {
         const contact = value.contacts?.find((item) => item.wa_id === message.from);
         const patient = await prisma.patient.upsert({ where: { cabinetId_phone: { cabinetId: integration.cabinetId, phone: message.from } }, update: { displayName: contact?.profile?.name ?? undefined, preferredLang: language }, create: { cabinetId: integration.cabinetId, phone: message.from, displayName: contact?.profile?.name || message.from, preferredLang: language } });
         const conversation = await prisma.conversation.findFirst({ where: { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: ["OPEN", "WAITING_HUMAN"] } }, orderBy: { updatedAt: "desc" } }) ?? await prisma.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id, intakeState: "OPEN" } });
         await prisma.conversation.update({ where: { id: conversation.id }, data: { intakeState: "OPEN" } });
         await prisma.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body: message.interactive?.button_reply?.title || language, externalId: message.id, createdAt: message.timestamp ? new Date(Number(message.timestamp) * 1000) : undefined } });
+        const welcome = language === "en" ? "Thank you. How can we help you today?" : language === "darija" ? "شكراً. كيف نقدروا نعاونك اليوم؟" : "Merci. Comment pouvons-nous vous aider aujourd’hui ?";
+        after(async () => {
+          const sent = await sendWhatsAppText(integration, message.from!, welcome);
+          if (sent.delivered) await prisma.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.ASSISTANT, body: welcome, externalId: sent.externalId ?? undefined } });
+        });
         continue;
       }
       if (!message.id || !message.from || message.type !== "text" || !message.text?.body) continue;

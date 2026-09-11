@@ -1,5 +1,6 @@
 import { MessageAuthor } from "@prisma/client";
 import { generateCabinetReply } from "@/lib/ai/cabinet-assistant";
+import { isClearlyOutsideCabinetScope, outsideCabinetScopeReply } from "@/lib/ai/scope-guard";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
@@ -25,6 +26,12 @@ export async function generateConversationReply(input: { cabinet: CabinetContext
   const context = { cabinetId: input.cabinet.id, conversationId: input.conversationId };
   const startedAt = Date.now();
   try {
+    // Do this before loading context or calling the provider: a request for code,
+    // a recipe, etc. must never become a chatbot task.
+    if (isClearlyOutsideCabinetScope(input.message)) {
+      logger.info("assistant.out_of_scope_rejected", context);
+      return { ok: true as const, text: outsideCabinetScopeReply(input.language) };
+    }
     const [knowledge, history] = await Promise.all([
       prisma.knowledgeBaseEntry.findMany({ where: { cabinetId: input.cabinet.id, status: "ACTIVE" }, select: { question: true, answer: true, category: true }, orderBy: [{ updatedAt: "desc" }, { id: "asc" }], take: KNOWLEDGE_LIMIT }),
       prisma.message.findMany({ where: { conversationId: input.conversationId, id: { not: input.inboundMessageId } }, select: { author: true, body: true }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT }),
