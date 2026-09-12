@@ -2,7 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { MessageAuthor } from "@prisma/client";
 import { NextResponse, after } from "next/server";
 import { generateConversationReply, isConversationThrottled, type CabinetContext } from "@/lib/ai/conversation-reply";
+import { isEmergencyCommand, languageWelcome } from "@/lib/ai/conversation-intake";
 import { logger } from "@/lib/logger";
+import { notifyUrgentConversation } from "@/lib/cabinet-notifications";
 import { prisma } from "@/lib/prisma";
 import { sendLanguageSelection, sendWhatsAppText } from "@/lib/whatsapp";
 
@@ -75,7 +77,7 @@ export async function POST(request: Request) {
         const conversation = await prisma.conversation.findFirst({ where: { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: ["OPEN", "WAITING_HUMAN"] } }, orderBy: { updatedAt: "desc" } }) ?? await prisma.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id, intakeState: "OPEN" } });
         await prisma.conversation.update({ where: { id: conversation.id }, data: { intakeState: "OPEN" } });
         await prisma.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body: message.interactive?.button_reply?.title || language, externalId: message.id, createdAt: message.timestamp ? new Date(Number(message.timestamp) * 1000) : undefined } });
-        const welcome = language === "en" ? "Thank you. How can we help you today?" : language === "darija" ? "شكراً. كيف نقدروا نعاونك اليوم؟" : "Merci. Comment pouvons-nous vous aider aujourd’hui ?";
+        const welcome = languageWelcome(language);
         after(async () => {
           const sent = await sendWhatsAppText(integration, message.from!, welcome);
           if (sent.delivered) await prisma.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.ASSISTANT, body: welcome, externalId: sent.externalId ?? undefined } });
@@ -88,6 +90,7 @@ export async function POST(request: Request) {
       const conversation = await prisma.conversation.findFirst({ where: { cabinetId: integration.cabinetId, patientId: patient.id, status: { in: ["OPEN", "WAITING_HUMAN"] } }, orderBy: { updatedAt: "desc" } }) ?? await prisma.conversation.create({ data: { cabinetId: integration.cabinetId, patientId: patient.id } });
       const inbound = await prisma.message.create({ data: { conversationId: conversation.id, author: MessageAuthor.PATIENT, body: message.text.body, externalId: message.id, createdAt: message.timestamp ? new Date(Number(message.timestamp) * 1000) : undefined } });
       if (conversation.intakeState === "LANGUAGE_SELECTION") { const to = message.from; after(() => sendLanguageSelection(integration, to, cabinet.supportedLanguages)); continue; }
+      if (isEmergencyCommand(message.text.body)) { await prisma.conversation.update({ where: { id: conversation.id }, data: { urgent: true, status: "WAITING_HUMAN" } }); after(() => notifyUrgentConversation(cabinet.id, conversation.id)); continue; }
       if (conversation.status === "WAITING_HUMAN") continue;
       if (await isConversationThrottled(conversation.id)) { await prisma.conversation.update({ where: { id: conversation.id }, data: { status: "WAITING_HUMAN" } }); continue; }
       const job = { account: integration, cabinet, conversationId: conversation.id, inboundMessageId: inbound.id, language: patient.preferredLang, patientId: patient.id, to: message.from, message: message.text.body };

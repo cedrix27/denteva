@@ -26,8 +26,6 @@ async function reserveDelivery(cabinetId: string, key: string, period: string) {
 async function releaseDelivery(id: string) { await prisma.notificationDelivery.delete({ where: { id } }).catch(() => undefined); }
 function recipientEmails(cabinet: { members: Array<{ user: { email: string } }> }) { return [...new Set(cabinet.members.map((member) => member.user.email).filter(Boolean))]; }
 
-export function isUrgentDentalMessage(body: string) { const text = body.toLowerCase(); return ["urgence", "urgent", "douleur intense", "douleur insupportable", "saignement", "gonflement", "dent cassée", "dent cassee", "accident", "traumatisme", "حالة مستعجلة", "ألم شديد", "وجع شديد", "نزيف", "تورم"].some((keyword) => text.includes(keyword)); }
-
 export async function notifyUrgentConversation(cabinetId: string, conversationId: string) {
   const conversation = await prisma.conversation.findFirst({ where: { id: conversationId, cabinetId }, include: { patient: true, cabinet: { include: { members: { include: { user: { select: { email: true } } } } } } } });
   if (!conversation || !setting(conversation.cabinet.notificationSettings, "urgent", true)) return false;
