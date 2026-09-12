@@ -139,13 +139,13 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes soft-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+@keyframes surface-in {
+  from { opacity: 0; transform: translateY(18px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .animate-fade-up { animation: fade-up 700ms cubic-bezier(.22,1,.36,1) both; }
-.animate-float { animation: soft-float 7s ease-in-out infinite; }
+.animate-surface-in { animation: surface-in 650ms cubic-bezier(.22,1,.36,1) 120ms both; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
