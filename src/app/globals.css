@@ -154,6 +154,16 @@
   50% { box-shadow: 0 0 0 5px rgba(82, 183, 136, 0); }
 }
 
+@keyframes landing-section-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes landing-drift {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-10px); }
+}
+
 .animate-fade-up { animation: fade-up 700ms cubic-bezier(.22,1,.36,1) both; }
 .animate-surface-in { animation: surface-in 650ms cubic-bezier(.22,1,.36,1) 120ms both; }
 .landing-reveal { animation: landing-reveal 650ms cubic-bezier(.22,1,.36,1) both; }
@@ -162,8 +172,15 @@
 .landing-delay-3 { animation-delay: 270ms; }
 .landing-delay-4 { animation-delay: 360ms; }
 .landing-pulse { animation: landing-pulse 2.4s ease-out infinite; }
+.landing-page > main > section { animation: landing-section-in 780ms cubic-bezier(.22,1,.36,1) both; }
+.landing-page > main > section:nth-child(2) { animation-delay: 120ms; }
+.landing-page > main > section:nth-child(3) { animation-delay: 220ms; }
+.landing-page > main > section:nth-child(4) { animation-delay: 320ms; }
+.landing-page > main > section:nth-child(5) { animation-delay: 420ms; }
+.landing-page > main > section:nth-child(6) { animation-delay: 520ms; }
+.landing-drift { animation: landing-drift 9s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .animate-fade-up, .animate-surface-in, .landing-reveal, .landing-pulse { animation: none; }
+  .animate-fade-up, .animate-surface-in, .landing-reveal, .landing-pulse, .landing-section-in, .landing-drift, .landing-page > main > section { animation: none; }
 }
